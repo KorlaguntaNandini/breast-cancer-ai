@@ -1,0 +1,111 @@
+import streamlit as st
+import pickle
+import numpy as np
+import shap
+
+# Load model and scaler
+model = pickle.load(open("breast_cancer_model.pkl", "rb"))
+scaler = pickle.load(open("scaler.pkl", "rb"))
+
+st.title("🏥 Breast Cancer Diagnosis System")
+
+# ---------------- Patient Info ----------------
+
+st.subheader("👩 Patient Information")
+
+name = st.text_input("Patient Name")
+age = st.number_input("Age", 1, 120)
+gender = st.selectbox("Gender", ["Female", "Male"])
+patient_id = st.text_input("Patient ID")
+doctor = st.text_input("Doctor Name")
+
+# ---------------- Tumor Inputs ----------------
+
+st.subheader("🔬 Tumor Measurements")
+
+radius = st.number_input("Mean Radius")
+texture = st.number_input("Mean Texture")
+perimeter = st.number_input("Mean Perimeter")
+area = st.number_input("Mean Area")
+concave_points = st.number_input("Mean Concave Points")
+
+feature_names = [
+    "Mean Radius",
+    "Mean Texture",
+    "Mean Perimeter",
+    "Mean Area",
+    "Mean Concave Points"
+]
+
+if st.button("Analyze Tumor"):
+
+    input_data = np.array([[radius, texture, perimeter, area, concave_points]])
+    input_scaled = scaler.transform(input_data)
+
+    prediction = model.predict(input_scaled)
+    probability = model.predict_proba(input_scaled)
+
+    st.subheader("📊 Diagnosis Result")
+
+    if prediction[0] == 1:
+        st.error("⚠️ Malignant Tumor Detected")
+    else:
+        st.success("✅ Benign (Non‑Cancerous)")
+
+    confidence = np.max(probability) * 100
+    st.write(f"Confidence Level: {confidence:.2f}%")
+
+    # ---------------- SHAP Explainability ----------------
+
+    st.subheader("🔍 Main Influencing Feature")
+
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(input_scaled)
+
+        if isinstance(shap_values, list):
+            shap_array = shap_values[0]
+        else:
+            shap_array = shap_values
+
+        shap_array = np.array(shap_array).flatten()
+        shap_array = shap_array[:len(feature_names)]
+
+        importance = np.abs(shap_array)
+        top_feature_index = np.argmax(importance)
+
+        st.info(f"Most Influential Feature: {feature_names[top_feature_index]}")
+
+    except:
+        st.info("Feature importance could not be calculated.")
+
+    # ---------------- Counterfactual Suggestion ----------------
+
+    st.subheader("🔄 Counterfactual Suggestion")
+
+    suggestions_found = False
+
+    for i in range(len(feature_names)):
+
+        temp = input_data.copy()
+
+        # reduce feature by 20%
+        temp[0][i] = temp[0][i] * 0.8
+
+        temp_scaled = scaler.transform(temp)
+        new_pred = model.predict(temp_scaled)
+
+        if new_pred[0] == 0:
+
+            st.write(
+                f"If **{feature_names[i]}** is reduced slightly, the prediction may change to **Benign**."
+            )
+
+            suggestions_found = True
+
+    if not suggestions_found:
+        st.info(
+            "No small adjustment could change the prediction to benign. Larger feature changes may be required."
+        )
+
+    st.success("AI Diagnostic Report Generated Successfully")
